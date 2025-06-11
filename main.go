@@ -7,19 +7,59 @@ import (
 	"os"
 )
 
+type cliCommand struct {
+	name 		string
+	description 	string
+	callback	func() error
+}
+
 func cleanInput(text string) []string {
 	cleanText := strings.ToLower(text)
 	cleanedWords := strings.Fields(cleanText)	
 	return cleanedWords
 }
 
+func commandExit() error {
+	fmt.Println("Closing the Pokedex... Goodbye!")
+	os.Exit(0)
+	return nil
+}
+
+func commandHelp() error {
+	fmt.Printf("Usage: \n\n")
+	for _, command := range commands {
+		fmt.Printf("%s: %s\n", command.name, command.description)	
+	}
+	return nil
+}
+
+var commands map[string]cliCommand
+
 func main() {
+	commands = map[string]cliCommand{
+	"exit": {
+		name:		"exit",
+		description:	"Exit the Pokedex",
+		callback:	commandExit,
+	},
+	"help": {
+		name:		"help",
+		description:	"Display a help message",
+		callback:	commandHelp,
+	},
+} 
+
 	var userInputTokens []string
 	scanner := bufio.NewScanner(os.Stdin)
 	for ;; {
 		fmt.Print("Pokedex > ")
 		scanner.Scan()
 		userInputTokens = cleanInput(scanner.Text())
-		fmt.Printf("Your command was: %s\n", userInputTokens[0])
+		command, ok := commands[userInputTokens[0]]
+		if !ok {
+			fmt.Println("Unknown command")
+		} else {
+			command.callback()
+		}
 	}
 }
