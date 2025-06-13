@@ -5,8 +5,12 @@ import (
 	"strings"
 	"bufio"
 	"os"
+	"io"
 	"encoding/json"
 	"net/http"
+	"pokedex/internal/pokecache"
+	"time"
+	"bytes"
 )
 
 type cliCommand struct {
@@ -57,20 +61,30 @@ func commandMap(c *config) error {
 		fmt.Println("you're on the last page")
 		return nil
 	}
+	
+	var body []byte
+	var isCached bool
+	if body, isCached = Cache.Get(*c.next); !isCached { 
+		res, err := http.Get(*c.next)
+		if err != nil {
+			fmt.Errorf("Error getting response: %v", err)
+			return err
+		}
+		defer res.Body.Close()
 
-	res, err := http.Get(*c.next)
-	if err != nil {
-		fmt.Errorf("Error getting response: %v", err)
-		return err
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+		Cache.Add(*c.next, body)
 	}
-	defer res.Body.Close()
 
 	var page Page 
-	decoder := json.NewDecoder(res.Body)
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(&page); err != nil {
 		return err
 	}
-	
+
 	areas := page.Results
 	for i := 0; i < len(areas); i++ {
 		fmt.Printf("%s\n", areas[i].Name)
@@ -79,7 +93,7 @@ func commandMap(c *config) error {
 	*c = config{
 		next: 		page.Next,
 		previous: 	page.Previous,
-	}
+	}	
 
 	return nil
 }
@@ -90,15 +104,25 @@ func commandMapb(c *config) error {
 		return nil
 	}	
 
-	res, err := http.Get(*c.previous)
-	if err != nil {
-		fmt.Errorf("Error getting response: %v", err)
-		return err
+	var body []byte
+	var isCached bool
+	if body, isCached = Cache.Get(*c.previous); !isCached { 
+		res, err := http.Get(*c.previous)
+		if err != nil {
+			fmt.Errorf("Error getting response: %v", err)
+			return err
+		}
+		defer res.Body.Close()
+
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+		Cache.Add(*c.next, body)
 	}
-	defer res.Body.Close()
 
 	var page Page 
-	decoder := json.NewDecoder(res.Body)
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(&page); err != nil {
 		return err
 	}
@@ -141,7 +165,7 @@ func getCommands() map[string]cliCommand {
 	}  
 }
 
-var commands map[string]cliCommand
+var Cache *pokecache.Cache
 
 func main() { 
 	var c config
@@ -149,6 +173,8 @@ func main() {
 	startUrl = "https://pokeapi.co/api/v2/location-area/" 
 	c = config{}
 	c.next = &startUrl
+
+	Cache = pokecache.NewCache(5 * time.Second)
 
 	var userInputTokens []string
 	scanner := bufio.NewScanner(os.Stdin)
