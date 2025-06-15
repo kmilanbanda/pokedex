@@ -245,7 +245,22 @@ func commandCatch(c *config, args []string) error {
 	
 	fmt.Printf("Throwing a Pokeball at %s...\n", args[0])
 
-	if roll := rand.Intn(1000); roll > pokemon.BaseExperience {
+	maxRoll := 1000
+	master := false
+	if len(args) > 1 {
+		switch args[1]  {
+		case "master":
+			master = true
+		case "ultra":
+			maxRoll = 3000
+		case "great":
+			maxRoll = 2000
+		default:
+			maxRoll = 1000
+		}
+	}
+
+	if roll := rand.Intn(maxRoll); roll > pokemon.BaseExperience || master {
 		fmt.Printf("%s was caught!\n", pokemon.Name)
 		CaughtPokemon[pokemon.Name] = pokemon
 
