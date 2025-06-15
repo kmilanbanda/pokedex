@@ -11,6 +11,7 @@ import (
 	"pokedex/internal/pokecache"
 	"time"
 	"bytes"
+	"math/rand"
 )
 
 type cliCommand struct {
@@ -34,6 +35,33 @@ type Page struct {
 	Next		*string	`json:"next"`
 	Previous	*string	`json:"previous"`
 	Results		[]Area	`json:"results"`	
+}
+
+type TypeDetails struct {
+	Name		string	`json:"name"`
+}
+
+type Type struct {
+	Slot		int		`json:"slot"`
+	Details		TypeDetails	`json:"type"`
+}
+
+type StatDetails struct {
+	Name		string `json:"name"`
+}
+
+type Stat struct {
+	BaseStat	int		`json:"base_stat"`	
+	Stat		StatDetails	`json:"stat"`
+}
+
+type Pokemon struct {
+	Name		string 	`json:"name"`
+	BaseExperience	int	`json:"base_experience"`
+	Weight		int	`json:"weight"`
+	Height		int	`json:"height"`
+	Stats		[]Stat	`json:"stats"`
+	Types		[]Type	`json:"types"`
 }
 
 type PokemonDetails struct {
@@ -191,6 +219,66 @@ func commandExplore(c *config, args []string) error {
 	return nil	
 }
 
+func commandCatch(c *config, args []string) error {	
+	baseUrl :=  "https://pokeapi.co/api/v2/pokemon/"
+	fullUrl := baseUrl + args[0]
+
+	res, err := http.Get(fullUrl)
+	if err != nil {
+		fmt.Errorf("Error getting response: %v", err)
+		return err
+	}
+	defer res.Body.Close()
+	
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Errorf("Error reading body: %v", err)
+		return err
+	}
+	
+	var pokemon Pokemon
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(&pokemon); err != nil {
+		fmt.Errorf("Error unmarshaling data: %v", err)
+		return err
+	}
+	
+	fmt.Printf("Throwing a Pokeball at %s...\n", args[0])
+
+	if roll := rand.Intn(1000); roll > pokemon.BaseExperience {
+		fmt.Printf("%s was caught!\n", pokemon.Name)
+		CaughtPokemon[pokemon.Name] = pokemon
+
+	} else {
+		fmt.Printf("%s escaped!\n", pokemon.Name)
+	}
+
+	return nil
+}
+
+func commandInspect(c *config, args []string) error {
+	if pokemon, isCaught := CaughtPokemon[args[0]]; isCaught {
+		fmt.Printf("Name: %s\n", pokemon.Name)
+		fmt.Printf("Height: %v\n", pokemon.Height)
+		fmt.Printf("Weight: %v\n", pokemon.Weight)
+
+		fmt.Printf("Stats:\n")
+		for i := 0; i < len(pokemon.Stats); i++ {
+			fmt.Printf("  -%s: %v\n", pokemon.Stats[i].Stat.Name, pokemon.Stats[i].BaseStat)
+		}
+
+		fmt.Printf("Types:\n")
+		for i := 0; i < len(pokemon.Types); i++ {
+			fmt.Printf("  - %s\n", pokemon.Types[i].Details.Name)
+		}
+
+	} else {
+		fmt.Println("You have not caught this pokemon!")
+	}
+
+	return nil
+}
+
 func getCommands() map[string]cliCommand {
 	return map[string]cliCommand{
 		"exit": {
@@ -218,10 +306,21 @@ func getCommands() map[string]cliCommand {
 			description:	"Displays a list of all pokemon in a location",
 			callback: 	commandExplore,
 		},
+		"catch": {
+			name:		"catch",
+			description:	"Try to catch a pokemon",
+			callback:	commandCatch,
+		},
+		"inspect": {
+			name:		"inspect",
+			description:	"Inspects a pokemon you have caught",
+			callback:	commandInspect,
+		},
 	}  
 }
 
 var Cache *pokecache.Cache
+var CaughtPokemon map[string]Pokemon
 
 func main() { 
 	var c config
@@ -231,6 +330,8 @@ func main() {
 	c.next = &startUrl
 
 	Cache = pokecache.NewCache(5 * time.Second)
+	CaughtPokemon = make(map[string]Pokemon)
+	rand.Seed(time.Now().UnixNano())
 
 	var userInputTokens []string
 	scanner := bufio.NewScanner(os.Stdin)
