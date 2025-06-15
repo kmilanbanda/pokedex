@@ -16,7 +16,7 @@ import (
 type cliCommand struct {
 	name 		string
 	description 	string
-	callback	func(*config) error
+	callback	func(*config, []string) error
 }
 
 type config struct {
@@ -36,19 +36,33 @@ type Page struct {
 	Results		[]Area	`json:"results"`	
 }
 
+type PokemonDetails struct {
+	Name		string	`json:"name"`
+	Url		string	`json:"url"`
+}
+
+type PokemonEncounter struct {
+	Pokemon		PokemonDetails	`json:"pokemon"`
+	//VersionDetails	
+}
+
+type AreaEncounters struct {
+	Encounters	[]PokemonEncounter	`json:"pokemon_encounters"`	
+}
+
 func cleanInput(text string) []string {
 	cleanText := strings.ToLower(text)
 	cleanedWords := strings.Fields(cleanText)	
 	return cleanedWords
 }
 
-func commandExit(c *config) error {
+func commandExit(c *config, args []string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(c *config) error {
+func commandHelp(c *config, args []string) error {
 	fmt.Printf("Welcome to the Pokedex!\nUsage: \n\n")
 	for _, command := range getCommands() {
 		fmt.Printf("%s: %s\n", command.name, command.description)	
@@ -56,7 +70,7 @@ func commandHelp(c *config) error {
 	return nil
 }
 
-func commandMap(c *config) error {
+func commandMap(c *config, args []string) error {
 	if c.next == nil {
 		fmt.Println("you're on the last page")
 		return nil
@@ -98,7 +112,7 @@ func commandMap(c *config) error {
 	return nil
 }
 
-func commandMapb(c *config) error {
+func commandMapb(c *config, args []string) error {
 	if c.previous == nil {
 		fmt.Println("you're on the first page")
 		return nil
@@ -140,6 +154,43 @@ func commandMapb(c *config) error {
 	return nil
 }
 
+func commandExplore(c *config, args []string) error {
+	baseUrl := "https://pokeapi.co/api/v2/location-area/"
+	fullUrl := baseUrl + args[0]
+
+
+	var body []byte
+	var isCached bool
+	if body, isCached = Cache.Get(fullUrl); !isCached { 
+		res, err := http.Get(fullUrl)
+		if err != nil {
+			fmt.Errorf("Error getting response: %v", err)
+			return err
+		}
+		defer res.Body.Close()
+
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+		Cache.Add(fullUrl, body)
+	}
+
+	var encounters AreaEncounters 
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(&encounters); err != nil {
+		return err
+	}
+	
+	fmt.Printf("Exploring %s...\nFound Pokemon:\n", args[0])
+	pokemon := encounters.Encounters
+	for i := 0; i < len(pokemon); i++ {
+		fmt.Printf(" - %s\n", pokemon[i].Pokemon.Name)
+	}
+
+	return nil	
+}
+
 func getCommands() map[string]cliCommand {
 	return map[string]cliCommand{
 		"exit": {
@@ -161,6 +212,11 @@ func getCommands() map[string]cliCommand {
 			name:  		"mapb",
 			description: 	"Displays the previous 20 location areas in Pokemon",
 			callback: 	commandMapb,
+		},
+		"explore": {
+			name:		"explore",
+			description:	"Displays a list of all pokemon in a location",
+			callback: 	commandExplore,
 		},
 	}  
 }
@@ -186,7 +242,7 @@ func main() {
 		if !ok {
 			fmt.Println("Unknown command")
 		} else {
-			command.callback(&c)
+			command.callback(&c, userInputTokens[1:])
 		}
 	}
 }
